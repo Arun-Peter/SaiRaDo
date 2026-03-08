@@ -726,6 +726,32 @@
       socket.on('call-cancelled', () => { resetCallUI(); alert('Call cancelled'); });
       socket.on('call-rejected', () => { resetCallUI(); alert('Call rejected'); });
       socket.on('call-ended', () => { captureAndLogGPS('End'); resetCallUI(); });
+
+    // FIX: "Ghost Call" Prevention
+    // Check if the disconnecting user was in a call or ringing someone
+    socket.on('disconnect', () => {
+    for (const [userId, status] of callStatus.entries()) {
+      if (userId === username || status.with === username) {
+        // Find the partner they were calling/talking to
+        const partnerId = userId === username ? status.with : userId;
+        const partnerSocket = connectedUsers.get(partnerId);
+        
+        // Tell the partner the call abruptly ended
+        if (partnerSocket) {
+          io.to(partnerSocket).emit('call-ended');
+        }
+        
+        // Clear the partner's call status
+        callStatus.delete(partnerId);
+      }
+    }
+
+    connectedUsers.delete(username);
+    callStatus.delete(username);
+    console.log(`❌ ${username} disconnected [${getTimestamp()}]`);
+    io.emit('users-online', Array.from(connectedUsers.keys()));
+  });
+
     }
 
     function renderUserList() {
