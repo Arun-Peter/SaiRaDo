@@ -264,7 +264,6 @@ io.on('connection', (socket) => {
     const toUser = (userToCall || '').toLowerCase();
     console.log(`📞 call-user from=${socket.userId} to=${toUser} type=${type} sdpLength=${offer && offer.sdp ? offer.sdp.length : 0}`);
 
-    // validate offer shape early — helps surface client-side serialization issues
     if (!offer || !offer.sdp || !offer.type) {
       console.warn('Malformed offer received, rejecting call', { from: socket.userId, to: toUser });
       socket.emit('call-failed', { user: toUser, reason: 'malformed-offer' });
@@ -273,7 +272,6 @@ io.on('connection', (socket) => {
 
     const recipientSocket = connectedUsers.get(toUser);
 
-    // If offline, tell caller
     if (!recipientSocket) {
       socket.emit('call-failed', { user: toUser, reason: 'offline' });
       return;
@@ -296,10 +294,8 @@ io.on('connection', (socket) => {
     }
   });
 
-  // New: surface diagnostic events coming from client
   socket.on('call-diagnostics', (d) => {
     console.log('call-diagnostics:', socket.userId, d || {});
-    // optionally persist to file for later analysis (not implemented here to keep changes small)
   });
 
   socket.on('ice-candidate', ({ to, candidate }) => {

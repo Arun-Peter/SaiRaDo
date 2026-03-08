@@ -314,26 +314,26 @@
     }
 
     /* add near other form / input styles */
-.password-wrapper { position: relative; }
-.password-wrapper .auth-input { padding-right: 44px; }
-.pw-toggle {
-	position: absolute;
-	right: 8px;
-	top: 50%;
-	transform: translateY(-50%);
-	background: transparent;
-	border: none;
-	color: #667eea;
-	font-size: 18px;
-	cursor: pointer;
-	width: 36px;
-	height: 36px;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	border-radius: 6px;
-}
-.pw-toggle:focus { outline: 2px solid rgba(102,126,234,0.25); }
+    .password-wrapper { position: relative; }
+    .password-wrapper .auth-input { padding-right: 44px; }
+    .pw-toggle {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: #667eea;
+      font-size: 18px;
+      cursor: pointer;
+      width: 36px;
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+    }
+    .pw-toggle:focus { outline: 2px solid rgba(102,126,234,0.25); }
   </style>
 </head>
 
@@ -449,7 +449,7 @@
   </div>
 
   <audio id="remote-audio" autoplay></audio>
-<audio id="ringtone" loop src="/ringtone.mp3"></audio>
+  <audio id="ringtone" loop src="/ringtone.mp3"></audio>
 
   <script>
     const socket = io({ autoConnect: false });
@@ -475,13 +475,44 @@
     let currentCallType = null;
     let callTimerInterval;
 
+    // FIX: Array to hold ICE candidates that arrive before the connection is ready
+    let pendingCandidates = [];
+
     // During call toggles
     let isMuted = false;
     let isVideoStopped = false;
     let speakerMode = 'headset'; // 'headset', 'loudspeaker', 'mute'
 
     let currentFacingMode = "user";
-    const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    
+    // FIX: Added TURN server placeholders to bypass Render.com / Production NATs
+    const rtcConfig = { 
+     iceServers: [
+      {
+        urls: "stun:stun.relay.metered.ca:80",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80",
+        username: "aedc046c3dea8d71088e0e93",
+        credential: "u9wMZ3JoYoXgHXoQ",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80?transport=tcp",
+        username: "aedc046c3dea8d71088e0e93",
+        credential: "u9wMZ3JoYoXgHXoQ",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:443",
+        username: "aedc046c3dea8d71088e0e93",
+        credential: "u9wMZ3JoYoXgHXoQ",
+      },
+      {
+        urls: "turns:global.relay.metered.ca:443?transport=tcp",
+        username: "aedc046c3dea8d71088e0e93",
+        credential: "u9wMZ3JoYoXgHXoQ",
+      },
+  ],
+    };
 
     window.addEventListener('load', async () => {
       const token = localStorage.getItem('token');
@@ -572,6 +603,7 @@
 
       const online = isUserOnline(selectedUser);
       dot.classList.toggle('online', online);
+      txt.textContent = online ? 'Offline' : 'Offline'; // Text update matched
       txt.textContent = online ? 'Online' : 'Offline';
     }
 
@@ -662,9 +694,14 @@
       socket.on('call-accepted', async (answer) => {
         document.getElementById('call-status-text').innerText = "Connected";
         try {
-          // Ensure answer is in proper RTCSessionDescription format
           const answerObj = typeof answer === 'string' ? JSON.parse(answer) : answer;
           await peerConnection.setRemoteDescription(new RTCSessionDescription(answerObj));
+          
+          // FIX: Add any ICE candidates that arrived before the connection was fully ready
+          while (pendingCandidates.length) {
+            const c = pendingCandidates.shift();
+            await peerConnection.addIceCandidate(new RTCIceCandidate(c)).catch(console.error);
+          }
         } catch (err) {
           console.error('Error setting remote description for answer:', err);
         }
@@ -673,10 +710,13 @@
         showCallBannerIfNeeded();
       });
 
-      socket.on('ice-candidate', (c) => {
-        if (peerConnection && c) {
+      // FIX: Queue ICE candidates if the RTCPeerConnection isn't ready yet
+      socket.on('ice-candidate', async (c) => {
+        if (!peerConnection || !peerConnection.remoteDescription) {
+          pendingCandidates.push(c);
+        } else {
           try {
-            peerConnection.addIceCandidate(new RTCIceCandidate(c));
+            await peerConnection.addIceCandidate(new RTCIceCandidate(c));
           } catch (err) {
             console.error('Error adding ICE candidate:', err);
           }
@@ -726,7 +766,6 @@
         const actions = document.createElement('div');
         actions.className = 'user-actions';
 
-        // unread badge
         if (unreadCounts[u] && unreadCounts[u] > 0) {
           const badge = document.createElement('span');
           badge.className = 'unread-badge';
@@ -734,7 +773,6 @@
           actions.appendChild(badge);
         }
 
-        // delete button
         const del = document.createElement('button');
         del.className = 'delete-btn';
         del.title = 'Delete chat history';
@@ -768,18 +806,12 @@
           return;
         }
 
-        // If this user's chat is currently open, close it
         if (selectedUser === user) {
           closeChat();
         }
 
-        // Clear unread count
         unreadCounts[user] = 0;
-
-        // Reload contacts to sync with server state
         await loadContacts();
-
-        // Re-render the user list
         renderUserList();
         updateCallButtonsAvailability();
         updateChatHeaderStatus();
@@ -936,13 +968,11 @@
 
     async function getMedia(type) {
       try {
-        // Always request needed tracks for this call type
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: true,
           video: type === 'video' ? { facingMode: currentFacingMode } : false
         });
 
-        // If user didn't enable on sidebar, start OFF
         const audioTrack = stream.getAudioTracks()[0];
         if (audioTrack) audioTrack.enabled = !!prefMicOn;
 
@@ -951,7 +981,6 @@
           if (videoTrack) videoTrack.enabled = !!prefCamOn;
         }
 
-        // set internal flags to match real state
         isMuted = !prefMicOn;
         isVideoStopped = (type === 'video') ? !prefCamOn : false;
 
@@ -976,18 +1005,15 @@
       localStream = await getMedia(type);
       if (!localStream) return;
 
-      // ---- NEW: pre-call validation / diagnostics ----
       const audioTrack = localStream.getAudioTracks()[0];
       const videoTrack = localStream.getVideoTracks()[0];
 
-      // If user requested video but no video track is available — fail early
       if (type === 'video' && !videoTrack) {
         alert('No camera available. Make sure camera is not blocked and permissions granted.');
         socket.emit('call-diagnostics', { to: selectedUser, stage: 'preflight', reason: 'no-local-video' });
         return;
       }
 
-      // If there's no audio track or it's disabled, fail early (mobile-specific problem indicator)
       if (!audioTrack) {
         alert('No microphone available. Make sure microphone is not blocked and permissions granted.');
         socket.emit('call-diagnostics', { to: selectedUser, stage: 'preflight', reason: 'no-local-audio' });
@@ -995,44 +1021,33 @@
       }
 
       if (!audioTrack.enabled) {
-        // Try to enable audioTrack if permission was granted but pref turned it off
-        try { audioTrack.enabled = true; } catch (err) { /* ignore */ }
+        try { audioTrack.enabled = true; } catch (err) { }
         if (!audioTrack.enabled) {
           alert('Microphone is muted/unavailable. Allow microphone in browser settings.');
           socket.emit('call-diagnostics', { to: selectedUser, stage: 'preflight', reason: 'audio-disabled' });
           return;
         }
       }
-      // ------------------------------------------------
 
       speakerMode = 'headset';
       setupVideoElements(type);
       createPeerConnection();
 
-      // Add tracks to peer connection (same working sequence as index_5)
-      const sendersBefore = peerConnection.getSenders().map(s => s.track && s.track.kind).filter(Boolean);
       localStream.getTracks().forEach(track => {
         peerConnection.addTrack(track, localStream);
       });
-      const sendersAfter = peerConnection.getSenders().map(s => s.track && s.track.kind).filter(Boolean);
-      console.log('senders before/after:', sendersBefore, sendersAfter);
 
-      // NEW: ensure at least the required senders exist before creating offer
       const hasAudioSender = peerConnection.getSenders().some(s => s.track && s.track.kind === 'audio');
       const hasVideoSender = (type === 'video') ? peerConnection.getSenders().some(s => s.track && s.track.kind === 'video') : true;
       if (!hasAudioSender || !hasVideoSender) {
-        console.error('Missing local sender(s)', { hasAudioSender, hasVideoSender });
         socket.emit('call-diagnostics', { to: selectedUser, stage: 'preflight', reason: 'missing-senders', hasAudioSender, hasVideoSender });
         alert('Failed to attach local media to the call. Check permissions and try again.');
         return;
       }
 
-      // Create and set local offer (reverted to simpler behavior that matched index_5)
       try {
-        console.log('Creating offer...');
-        const offer = await peerConnection.createOffer(); // keep simple — some mobiles prefer this
+        const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
-        console.log('Local description set; sending offer (sdp length=%d)', offer.sdp?.length || 0);
 
         socket.emit('call-user', {
           userToCall: selectedUser,
@@ -1040,7 +1055,6 @@
           type
         });
 
-        // Emit a short diagnostic snapshot for server logging/remote debugging
         socket.emit('call-diagnostics', {
           to: selectedUser,
           stage: 'offer-sent',
@@ -1077,16 +1091,19 @@
       createPeerConnection();
 
       try {
-        // Ensure offer is in proper RTCSessionDescription format
         const offerObj = typeof incomingOffer === 'string' ? JSON.parse(incomingOffer) : incomingOffer;
         await peerConnection.setRemoteDescription(new RTCSessionDescription(offerObj));
 
-        // Add local tracks AFTER remote description
+        // FIX: Add any queued ICE candidates that came in before the user answered
+        while (pendingCandidates.length) {
+          const c = pendingCandidates.shift();
+          await peerConnection.addIceCandidate(new RTCIceCandidate(c)).catch(console.error);
+        }
+
         localStream.getTracks().forEach(track => {
           peerConnection.addTrack(track, localStream);
         });
 
-        // Create and set local answer
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
 
@@ -1120,35 +1137,18 @@
       peerConnection = new RTCPeerConnection(rtcConfig);
 
       peerConnection.onicecandidate = (e) => {
-        console.log('ICE candidate:', e.candidate ? `${e.candidate.candidate.substring(0, 50)}...` : 'gathering complete');
         if (e.candidate) {
           socket.emit('ice-candidate', { to: selectedUser, candidate: e.candidate });
         }
       };
 
       peerConnection.ontrack = (e) => {
-        console.log('Remote track received:', e.track.kind, 'streams:', e.streams.length);
         if (currentCallType === 'video') {
           document.getElementById('remote-video').srcObject = e.streams[0];
         } else {
           document.getElementById('remote-audio').srcObject = e.streams[0];
         }
         applySpeakerMode();
-      };
-
-      peerConnection.onconnectionstatechange = () => {
-        console.log('Connection state:', peerConnection.connectionState);
-        if (peerConnection.connectionState === 'failed') {
-          console.error('Connection failed!');
-        }
-      };
-
-      peerConnection.oniceconnectionstatechange = () => {
-        console.log('ICE connection state:', peerConnection.iceConnectionState);
-      };
-
-      peerConnection.onsignalingstatechange = () => {
-        console.log('Signaling state:', peerConnection.signalingState);
       };
     }
 
@@ -1180,6 +1180,8 @@
         peerConnection.close();
         peerConnection = null;
       }
+      
+      pendingCandidates = []; // FIX: Clear pending candidates on reset
 
       stopCallTimer();
 
@@ -1189,7 +1191,7 @@
 
       isMuted = false;
       isVideoStopped = false;
-      speakerMode = 'headset'; // Reset to headset
+      speakerMode = 'headset'; 
 
       applySpeakerMode();
       updateControlButtons();
@@ -1217,11 +1219,9 @@
       const audioTrack = localStream.getAudioTracks()[0];
       if (!audioTrack) return;
 
-      // If pref was off, allow enabling during call
       isMuted = !isMuted;
       audioTrack.enabled = !isMuted;
 
-      // reflect pref state? (keep prefs unchanged; only call-state changes)
       updateControlButtons();
       showCallBannerIfNeeded();
     }
@@ -1239,7 +1239,6 @@
     }
 
     function toggleSpeaker() {
-      // Cycle through: headset -> loudspeaker -> mute -> headset
       if (speakerMode === 'headset') {
         speakerMode = 'loudspeaker';
       } else if (speakerMode === 'loudspeaker') {
@@ -1256,24 +1255,17 @@
       const remoteVideo = document.getElementById('remote-video');
       const ringtone = document.getElementById('ringtone');
 
-      // Ringtone always plays on loudspeaker during incoming call
       if (ringtone && !ringtone.paused) {
         ringtone.muted = false;
         ringtone.volume = 1;
       }
 
-      // Apply speaker mode to call audio/video
       const isMutedMode = speakerMode === 'mute';
-      const isLoudspeaker = speakerMode === 'loudspeaker';
 
       remoteAudio.muted = isMutedMode;
       remoteAudio.volume = isMutedMode ? 0 : 1;
       remoteVideo.muted = isMutedMode;
       remoteVideo.volume = isMutedMode ? 0 : 1;
-
-      // Note: Browser audio routing (headset vs loudspeaker) is OS-level and automatic
-      // Headset output is default when headset is plugged in
-      // This flag is for UI state tracking
     }
 
     async function switchCamera() {
@@ -1292,7 +1284,6 @@
       const newTrack = newStream.getVideoTracks()[0];
       if (!newTrack) return;
 
-      // Keep current camera state
       newTrack.enabled = !isVideoStopped;
 
       const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
@@ -1302,14 +1293,6 @@
       localStream.addTrack(newTrack);
 
       document.getElementById('local-video').srcObject = localStream;
-    }
-
-    // small helper to surface diagnostics on the client console/UI
-    function emitLocalDiagnostics(obj) {
-      console.log('LOCAL DIAGNOSTIC:', obj);
-      if (socket && socket.connected && selectedUser) {
-        socket.emit('call-diagnostics', Object.assign({ to: selectedUser }, obj));
-      }
     }
 
     function setButtonVisual(btn, disabled) {
@@ -1323,16 +1306,15 @@
 
       setButtonVisual(muteBtn, isMuted);
       
-      // Update speaker button visual based on mode - ensure 'active' is removed when not mute
       speakerBtn.classList.remove('active');
-      speakerBtn.classList.add('btn-secondary'); // Keep grey background
+      speakerBtn.classList.add('btn-secondary'); 
       
       if (speakerMode === 'headset') {
         speakerBtn.innerHTML = '<span class="icon">🎧</span>';
       } else if (speakerMode === 'loudspeaker') {
         speakerBtn.innerHTML = '<span class="icon">📢</span>';
       } else if (speakerMode === 'mute') {
-        speakerBtn.classList.add('active'); // Only add 'active' for mute
+        speakerBtn.classList.add('active'); 
         speakerBtn.innerHTML = '<span class="icon">🔊</span><span class="strike"></span>';
       }
 
@@ -1380,7 +1362,6 @@
       btn.setAttribute('aria-pressed', String(isPwd));
       btn.title = isPwd ? 'Hide password' : 'Show password';
       btn.textContent = isPwd ? '🙈' : '👁️';
-      // keep focus on input after toggle for better UX on mobile
       try { inp.focus(); } catch (e) {}
     }
   </script>
