@@ -8,9 +8,12 @@ const cors = require('cors');
 const fs = require('fs');
 
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = 'revupro-super-secret-merged-key';
+const JWT_SECRET = process.env.JWT_SECRET || require('crypto').randomBytes(32).toString('hex');
 
 const DATA_PATH = path.join(__dirname, 'data.json');
+const USERS_PATH = path.join(__dirname, 'users.json');
+const CHATS_PATH = path.join(__dirname, 'chats.json');
+const APP_STATE_PATH = path.join(__dirname, 'app_state.json');
 const GPS_LOG_PATH = path.join(__dirname, 'gps_logs.json');
 
 const app = express();
@@ -24,32 +27,76 @@ const io = socketIO(server, {
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Static
+// Serve only client assets; application data stays outside the public directory.
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR));
+
+// Serve index.html as the root page
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public/index.html'));
+});
 
 // --- Data Storage ---
 let usersDB = {};               // username -> hash
 let messages = [];              // { from, to, message, timestamp, read }
+let groups = {};                // groupId -> { id, name, members[], createdBy, createdAt }
+let groupMessages = [];         // { groupId, from, message, timestamp }
+let blockedUsers = {};          // username -> array of blocked usernames (serialized as array)
 let connectedUsers = new Map(); // username -> socket.id
 let callStatus = new Map();
 
 // --- Load/Save Logic ---
 function loadData() {
-  try {
-    if (fs.existsSync(DATA_PATH)) {
-      const data = fs.readFileSync(DATA_PATH, 'utf8');
-      const parsed = JSON.parse(data);
-      usersDB = parsed.users || {};
-      messages = parsed.messages || [];
-    }
-  } catch (e) {
-    console.log('📝 Creating new data file...');
+  const legacyData = fs.existsSync(DATA_PATH)
+    ? JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'))
+    : {};
+  const usersData = readJson(USERS_PATH, legacyData.users || {});
+  const chatsData = readJson(CHATS_PATH, {
+    messages: legacyData.messages || [],
+    groupMessages: legacyData.groupMessages || [],
+  });
+  const appStateData = readJson(APP_STATE_PATH, {
+    groups: legacyData.groups || {},
+    blockedUsers: legacyData.blockedUsers || {},
+  });
+
+  usersDB = usersData;
+  messages = chatsData.messages || [];
+  groupMessages = chatsData.groupMessages || [];
+  groups = appStateData.groups || {};
+  blockedUsers = appStateData.blockedUsers || {};
+
+  if (fs.existsSync(DATA_PATH)) {
+    saveUsers();
+    saveChats();
+    saveAppState();
+    fs.unlinkSync(DATA_PATH);
+    console.log('✅ Migrated data.json into users.json, chats.json, and app_state.json');
   }
 }
 
-function saveData() {
-  fs.writeFileSync(DATA_PATH, JSON.stringify({ users: usersDB, messages }, null, 2));
+function readJson(filePath, fallback) {
+  return fs.existsSync(filePath)
+    ? JSON.parse(fs.readFileSync(filePath, 'utf8'))
+    : fallback;
+}
+
+function saveUsers() {
+  fs.writeFileSync(USERS_PATH, JSON.stringify(usersDB, null, 2));
+}
+
+function saveChats() {
+  fs.writeFileSync(CHATS_PATH, JSON.stringify({
+    messages,
+    groupMessages,
+  }, null, 2));
+}
+
+function saveAppState() {
+  fs.writeFileSync(APP_STATE_PATH, JSON.stringify({
+    groups,
+    blockedUsers,
+  }, null, 2));
 }
 
 function logGPS(username, stage, type, coords) {
@@ -104,6 +151,11 @@ function getContactsForUser(username) {
   return Array.from(set).sort();
 }
 
+function isBlocked(blocker, target) {
+  const list = blockedUsers[blocker.toLowerCase()];
+  return Array.isArray(list) && list.includes(target.toLowerCase());
+}
+
 // --- API Routes ---
 app.post('/api/auth/signup', async (req, res) => {
   let { username, password } = req.body;
@@ -113,7 +165,7 @@ app.post('/api/auth/signup', async (req, res) => {
 
   const hashedPassword = await bcrypt.hash(password, 10);
   usersDB[username] = hashedPassword;
-  saveData();
+  saveUsers();
 
   const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '30d' });
   res.json({ token, username });
@@ -149,7 +201,7 @@ app.get('/api/messages/:target', authenticateToken, (req, res) => {
   res.json(history);
 });
 
-// ✅ NEW: Delete chat history between current user and target
+// Delete chat history between current user and target
 app.delete('/api/messages/:target', authenticateToken, (req, res) => {
   const target = req.params.target.toLowerCase();
   const current = req.user.username.toLowerCase();
@@ -164,7 +216,7 @@ app.delete('/api/messages/:target', authenticateToken, (req, res) => {
   );
 
   const deleted = before - messages.length;
-  saveData();
+  saveChats();
 
   res.json({ ok: true, deleted });
 });
@@ -172,6 +224,110 @@ app.delete('/api/messages/:target', authenticateToken, (req, res) => {
 app.get('/api/contacts', authenticateToken, (req, res) => {
   const current = req.user.username.toLowerCase();
   res.json(getContactsForUser(current));
+});
+
+// --- Block / Unblock Routes ---
+app.get('/api/blocked', authenticateToken, (req, res) => {
+  const current = req.user.username.toLowerCase();
+  res.json(blockedUsers[current] || []);
+});
+
+app.post('/api/block/:target', authenticateToken, (req, res) => {
+  const current = req.user.username.toLowerCase();
+  const target = req.params.target.toLowerCase();
+  if (current === target) return res.status(400).json({ message: 'Cannot block yourself' });
+
+  if (!blockedUsers[current]) blockedUsers[current] = [];
+  if (!blockedUsers[current].includes(target)) {
+    blockedUsers[current].push(target);
+    saveAppState();
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/unblock/:target', authenticateToken, (req, res) => {
+  const current = req.user.username.toLowerCase();
+  const target = req.params.target.toLowerCase();
+
+  if (blockedUsers[current]) {
+    blockedUsers[current] = blockedUsers[current].filter(u => u !== target);
+    saveAppState();
+  }
+  res.json({ ok: true });
+});
+
+// --- Group Routes ---
+app.get('/api/groups', authenticateToken, (req, res) => {
+  const current = req.user.username.toLowerCase();
+  const myGroups = Object.values(groups).filter(g => g.members.includes(current));
+  res.json(myGroups);
+});
+
+app.post('/api/groups', authenticateToken, (req, res) => {
+  let { name, members } = req.body;
+  const current = req.user.username.toLowerCase();
+
+  if (!name || !name.trim()) return res.status(400).json({ message: 'Group name required' });
+  if (!Array.isArray(members) || members.length < 1) {
+    return res.status(400).json({ message: 'At least one other member required' });
+  }
+
+  const memberSet = new Set(members.map(m => m.toLowerCase()));
+  memberSet.add(current);
+
+  const groupId = `grp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const group = {
+    id: groupId,
+    name: name.trim(),
+    members: Array.from(memberSet),
+    createdBy: current,
+    createdAt: new Date().toISOString(),
+  };
+
+  groups[groupId] = group;
+  saveAppState();
+
+  // Notify all online members
+  for (const member of group.members) {
+    const sid = connectedUsers.get(member);
+    if (sid) io.to(sid).emit('group-created', group);
+  }
+
+  res.json(group);
+});
+
+app.get('/api/groups/:groupId/messages', authenticateToken, (req, res) => {
+  const current = req.user.username.toLowerCase();
+  const { groupId } = req.params;
+  const group = groups[groupId];
+
+  if (!group || !group.members.includes(current)) {
+    return res.status(403).json({ message: 'Not a member of this group' });
+  }
+
+  res.json(groupMessages.filter(m => m.groupId === groupId));
+});
+
+app.delete('/api/groups/:groupId', authenticateToken, (req, res) => {
+  const current = req.user.username.toLowerCase();
+  const { groupId } = req.params;
+  const group = groups[groupId];
+
+  if (!group) return res.status(404).json({ message: 'Group not found' });
+  if (!group.members.includes(current)) return res.status(403).json({ message: 'Not a member' });
+
+  const members = [...group.members];
+  delete groups[groupId];
+  groupMessages = groupMessages.filter(m => m.groupId !== groupId);
+  saveAppState();
+  saveChats();
+
+  for (const member of members) {
+    const sid = connectedUsers.get(member);
+    if (sid) io.to(sid).emit('group-deleted', { groupId, deletedBy: current });
+  }
+
+  res.json({ ok: true });
 });
 
 // --- Socket Logic ---
@@ -207,26 +363,51 @@ io.on('connection', (socket) => {
   });
   socket.emit('unread-counts', unreadCounts);
 
-  // --- Chat ---
+  // --- Direct Chat ---
   socket.on('send-message', ({ to, message }) => {
+    const toUser = to.toLowerCase();
+
+    // Silently drop if recipient has blocked this sender
+    if (isBlocked(toUser, username)) {
+      socket.emit('message-blocked', { to: toUser });
+      return;
+    }
+
     const timestamp = new Date().toISOString();
     const msg = {
       from: username,
-      to: to.toLowerCase(),
+      to: toUser,
       message,
       timestamp,
       read: false,
     };
 
     messages.push(msg);
-    saveData();
+    saveChats();
 
-    const recipientSocket = connectedUsers.get(to.toLowerCase());
+    const recipientSocket = connectedUsers.get(toUser);
 
     socket.emit('message-sent-confirm', msg);
 
     if (recipientSocket) {
       io.to(recipientSocket).emit('receive-message', msg);
+    }
+  });
+
+  // --- Group Chat ---
+  socket.on('send-group-message', ({ groupId, message }) => {
+    const group = groups[groupId];
+    if (!group || !group.members.includes(username)) return;
+
+    const timestamp = new Date().toISOString();
+    const msg = { groupId, from: username, message, timestamp };
+
+    groupMessages.push(msg);
+    saveChats();
+
+    for (const member of group.members) {
+      const sid = connectedUsers.get(member);
+      if (sid) io.to(sid).emit('receive-group-message', msg);
     }
   });
 
@@ -242,7 +423,7 @@ io.on('connection', (socket) => {
     });
 
     if (updated) {
-      saveData();
+      saveChats();
 
       const senderSocketId = connectedUsers.get(sender);
       if (senderSocketId) {
