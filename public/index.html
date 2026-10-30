@@ -98,6 +98,60 @@
     .enable-btn.off { background: #e9ecef; color: #555; }
     .enable-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
+    /* Sidebar tabs */
+    .sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .sidebar-tab {
+      flex: 1;
+      padding: 10px 0;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      color: #666;
+      border-bottom: 3px solid transparent;
+      transition: 0.2s;
+      background: none;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+    }
+    .sidebar-tab.active {
+      color: #2196f3;
+      border-bottom-color: #2196f3;
+    }
+    .sidebar-tab { position: relative; }
+    .tab-badge {
+      position: absolute;
+      top: 6px; right: 10px;
+      width: 8px; height: 8px;
+      background: #f44336;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .tab-panel { display: none; flex: 1; overflow-y: auto; flex-direction: column; }
+    .tab-panel.active { display: flex; }
+
+    /* New Group button */
+    .new-group-btn {
+      margin: 10px 12px;
+      padding: 9px 14px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .new-group-btn:hover { background: #5568d4; }
+
     .user-list { overflow-y: auto; flex: 1; }
 
     .user-item {
@@ -112,9 +166,11 @@
     }
     .user-item:hover { background: #f5f7fa; }
     .user-item.active { background: #e3f2fd; border-left: 4px solid #2196f3; }
+    .user-item.blocked-item { opacity: 0.55; }
 
     .user-info-group { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .user-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-name-sub { font-size: 11px; color: #999; margin-top: 1px; }
 
     .user-status {
       width: 10px; height: 10px;
@@ -123,11 +179,20 @@
       flex: 0 0 auto;
     }
     .user-status.online { background: #4caf50; }
+    .group-icon {
+      width: 28px; height: 28px;
+      background: #667eea;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      flex: 0 0 auto;
+      color: white;
+    }
 
     .user-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       flex: 0 0 auto;
     }
 
@@ -148,6 +213,17 @@
       opacity: 0.7;
     }
     .delete-btn:hover { opacity: 1; }
+
+    .block-btn {
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 15px;
+      opacity: 0.7;
+      padding: 2px;
+    }
+    .block-btn:hover { opacity: 1; }
+    .block-btn.blocked { color: #f44336; opacity: 1; }
 
     /* Chat Area */
     .chat-area { flex: 1; display: flex; flex-direction: column; background: #fff; position: relative; }
@@ -170,6 +246,15 @@
       flex: 0 0 auto;
     }
     .chat-status-dot.online { background: #4caf50; }
+    .chat-group-icon {
+      width: 28px; height: 28px;
+      background: #667eea;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      color: white;
+      flex: 0 0 auto;
+    }
 
     .chat-substatus {
       font-size: 11px;
@@ -204,6 +289,7 @@
     .msg-sent { align-self: flex-end; background: #2196f3; color: white; border-bottom-right-radius: 4px; }
     .msg-received { align-self: flex-start; background: white; border: 1px solid #e0e0e0; border-bottom-left-radius: 4px; }
     .msg-meta { font-size: 10px; text-align: right; margin-top: 4px; opacity: 0.8; display: flex; justify-content: flex-end; align-items: center; gap: 4px; }
+    .msg-sender-name { font-size: 11px; font-weight: 700; color: #667eea; margin-bottom: 3px; }
 
     .input-area {
       padding: 20px; border-top: 1px solid #e0e0e0; background: white;
@@ -273,7 +359,6 @@
       color: white;
       font-size: 20px;
     }
-    /* "Disabled" style: white circle with red strike */
     .btn-secondary.active {
       background: #fff;
       color: #111;
@@ -302,6 +387,41 @@
       color: white;
     }
 
+    /* Modal overlay for create group */
+    .modal-backdrop {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.45); z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal-box {
+      background: white; border-radius: 12px; padding: 28px;
+      width: 90%; max-width: 420px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+    .modal-box h3 { margin-bottom: 16px; color: #333; }
+    .modal-input {
+      width: 100%; padding: 10px 14px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 15px; margin-bottom: 12px; outline: none;
+    }
+    .modal-input:focus { border-color: #667eea; }
+    .modal-members-list { max-height: 200px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 14px; }
+    .modal-member-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px; border-bottom: 1px solid #f0f0f0; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .modal-member-item:last-child { border-bottom: none; }
+    .modal-member-item:hover { background: #f5f7fa; }
+    .modal-member-item input[type=checkbox] { accent-color: #667eea; width: 16px; height: 16px; cursor: pointer; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+    .modal-btn {
+      padding: 9px 20px; border: none; border-radius: 8px;
+      cursor: pointer; font-weight: 600; font-size: 14px;
+    }
+    .modal-btn-cancel { background: #e0e0e0; color: #333; }
+    .modal-btn-create { background: #667eea; color: white; }
+    .modal-btn-create:hover { background: #5568d4; }
+
     .hidden { display: none !important; }
     @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
 
@@ -313,7 +433,6 @@
       .chat-area.mobile-fullscreen { height: 100vh; }
     }
 
-    /* add near other form / input styles */
     .password-wrapper { position: relative; }
     .password-wrapper .auth-input { padding-right: 44px; }
     .pw-toggle {
@@ -360,7 +479,7 @@
     <div id="sidebar" class="sidebar">
       <div class="sidebar-header">
         <div class="sidebar-header-left">
-          <h3>Users</h3>
+          <h3>SaiRaDo</h3>
           <span id="current-username" style="font-size:12px; color:#666;"></span>
         </div>
 
@@ -371,12 +490,27 @@
         </div>
       </div>
 
-      <div id="users-list" class="user-list"></div>
+      <!-- Tabs: Chats / Groups -->
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab active" id="tab-chats" onclick="switchTab('chats')">💬 Chats</button>
+        <button class="sidebar-tab" id="tab-groups" onclick="switchTab('groups')">👥 Groups</button>
+      </div>
+
+      <!-- Chats panel -->
+      <div id="panel-chats" class="tab-panel active">
+        <div id="users-list" class="user-list"></div>
+      </div>
+
+      <!-- Groups panel -->
+      <div id="panel-groups" class="tab-panel">
+        <button class="new-group-btn" onclick="openCreateGroupModal()">＋ New Group</button>
+        <div id="groups-list" class="user-list"></div>
+      </div>
     </div>
 
     <div id="chat-area" class="chat-area">
       <div id="no-chat-selected" style="flex:1; display:flex; align-items:center; justify-content:center; color:#999;">
-        Select a user to start chatting
+        Select a user or group to start chatting
       </div>
 
       <div id="active-chat-interface" class="hidden" style="display:flex; flex-direction:column; height:100%;">
@@ -386,6 +520,7 @@
 
             <div class="chat-title-wrap">
               <div id="chat-status-dot" class="chat-status-dot"></div>
+              <div id="chat-group-icon" class="chat-group-icon hidden">👥</div>
               <div class="chat-title-text">
                 <h3 id="chat-with-name" style="margin:0;">User</h3>
                 <div id="chat-with-status" class="chat-substatus">Offline</div>
@@ -448,6 +583,20 @@
     </div>
   </div>
 
+  <!-- Create Group Modal -->
+  <div id="create-group-modal" class="modal-backdrop hidden">
+    <div class="modal-box">
+      <h3>Create Group</h3>
+      <input id="group-name-input" class="modal-input" placeholder="Group name" maxlength="60" />
+      <p style="font-size:13px; color:#666; margin-bottom:8px;">Select members:</p>
+      <div id="modal-members-list" class="modal-members-list"></div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-cancel" onclick="closeCreateGroupModal()">Cancel</button>
+        <button class="modal-btn modal-btn-create" onclick="createGroup()">Create</button>
+      </div>
+    </div>
+  </div>
+
   <audio id="remote-audio" autoplay></audio>
   <audio id="ringtone" loop src="/ringtone.mp3"></audio>
 
@@ -455,12 +604,16 @@
     const socket = io({ autoConnect: false });
 
     let currentUser = null;
-    let selectedUser = null;
+    let selectedUser = null;       // direct chat target
+    let selectedGroupId = null;    // group chat target
     let isSignup = false;
 
     let unreadCounts = {};
     let onlineUsersList = [];
     let contactsList = [];
+    let groupsList = [];           // array of group objects
+    let blockedList = [];          // array of blocked usernames
+    let currentTab = 'chats';
 
     // Pre-enable state
     let prefMicOn = false;
@@ -475,44 +628,13 @@
     let currentCallType = null;
     let callTimerInterval;
 
-    // FIX: Array to hold ICE candidates that arrive before the connection is ready
-    let pendingCandidates = [];
-
     // During call toggles
     let isMuted = false;
     let isVideoStopped = false;
-    let speakerMode = 'headset'; // 'headset', 'loudspeaker', 'mute'
+    let speakerMode = 'headset';
 
     let currentFacingMode = "user";
-    
-    // FIX: Added TURN server placeholders to bypass Render.com / Production NATs
-    const rtcConfig = { 
-     iceServers: [
-      {
-        urls: "stun:stun.relay.metered.ca:80",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:80",
-        username: "aedc046c3dea8d71088e0e93",
-        credential: "u9wMZ3JoYoXgHXoQ",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:80?transport=tcp",
-        username: "aedc046c3dea8d71088e0e93",
-        credential: "u9wMZ3JoYoXgHXoQ",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:443",
-        username: "aedc046c3dea8d71088e0e93",
-        credential: "u9wMZ3JoYoXgHXoQ",
-      },
-      {
-        urls: "turns:global.relay.metered.ca:443?transport=tcp",
-        username: "aedc046c3dea8d71088e0e93",
-        credential: "u9wMZ3JoYoXgHXoQ",
-      },
-  ],
-    };
+    const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
     window.addEventListener('load', async () => {
       const token = localStorage.getItem('token');
@@ -524,8 +646,9 @@
             currentUser = data.username;
             initializeSocket(token);
             showApp();
-            await loadContacts();
+            await Promise.all([loadContacts(), loadGroups(), loadBlocked()]);
             renderUserList();
+            renderGroupList();
             updateEnableButtons();
             updateChatHeaderStatus();
             updateCallButtonsAvailability();
@@ -567,8 +690,9 @@
           initializeSocket(data.token);
           showApp();
           document.getElementById('auth-screen').classList.add('hidden');
-          await loadContacts();
+          await Promise.all([loadContacts(), loadGroups(), loadBlocked()]);
           renderUserList();
+          renderGroupList();
           updateEnableButtons();
           updateChatHeaderStatus();
           updateCallButtonsAvailability();
@@ -595,22 +719,62 @@
       return onlineUsersList.includes((user || '').toLowerCase());
     }
 
+    function isUserBlocked(user) {
+      return blockedList.includes((user || '').toLowerCase());
+    }
+
+    // --- Tab switching ---
+    function switchTab(tab) {
+      currentTab = tab;
+      document.getElementById('tab-chats').classList.toggle('active', tab === 'chats');
+      document.getElementById('tab-groups').classList.toggle('active', tab === 'groups');
+      document.getElementById('panel-chats').classList.toggle('active', tab === 'chats');
+      document.getElementById('panel-groups').classList.toggle('active', tab === 'groups');
+      if (tab === 'groups') setGroupsTabBadge(false);
+    }
+
+    function setGroupsTabBadge(show) {
+      const tab = document.getElementById('tab-groups');
+      let badge = tab.querySelector('.tab-badge');
+      if (show) {
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'tab-badge';
+          tab.appendChild(badge);
+        }
+      } else {
+        if (badge) badge.remove();
+      }
+    }
+
     function updateChatHeaderStatus() {
       const dot = document.getElementById('chat-status-dot');
       const txt = document.getElementById('chat-with-status');
+      const groupIcon = document.getElementById('chat-group-icon');
+
+      if (selectedGroupId) {
+        dot.classList.add('hidden');
+        groupIcon.classList.remove('hidden');
+        const grp = groupsList.find(g => g.id === selectedGroupId);
+        txt.textContent = grp ? `${grp.members.length} members` : 'Group';
+        return;
+      }
+
+      groupIcon.classList.add('hidden');
+      dot.classList.remove('hidden');
 
       if (!selectedUser) return;
 
       const online = isUserOnline(selectedUser);
       dot.classList.toggle('online', online);
-      txt.textContent = online ? 'Offline' : 'Offline'; // Text update matched
       txt.textContent = online ? 'Online' : 'Offline';
     }
 
     function updateCallButtonsAvailability() {
       const audioBtn = document.getElementById('call-audio-btn');
       const videoBtn = document.getElementById('call-video-btn');
-      const canCall = !!selectedUser && isUserOnline(selectedUser);
+      // Calls only for direct 1-1 chats with online users
+      const canCall = !!selectedUser && !selectedGroupId && isUserOnline(selectedUser);
       audioBtn.disabled = !canCall;
       videoBtn.disabled = !canCall;
     }
@@ -622,10 +786,33 @@
         });
         if (res.ok) {
           const data = await res.json();
-          contactsList = Array.isArray(data) ? data.filter(u => u !== currentUser) : [];
+          const me = (currentUser || '').toLowerCase();
+          contactsList = Array.isArray(data) ? data.map(u => u.toLowerCase()).filter(u => u !== me) : [];
         }
       } catch (e) {
         console.warn('Failed to load contacts', e);
+      }
+    }
+
+    async function loadGroups() {
+      try {
+        const res = await fetch('/api/groups', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (res.ok) groupsList = await res.json();
+      } catch (e) {
+        console.warn('Failed to load groups', e);
+      }
+    }
+
+    async function loadBlocked() {
+      try {
+        const res = await fetch('/api/blocked', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (res.ok) blockedList = await res.json();
+      } catch (e) {
+        console.warn('Failed to load blocked list', e);
       }
     }
 
@@ -634,7 +821,9 @@
       socket.connect();
 
       socket.on('users-online', (users) => {
-        onlineUsersList = users.filter(u => u !== currentUser);
+        // Normalise everything to lowercase so comparisons are consistent
+        const me = (currentUser || '').toLowerCase();
+        onlineUsersList = users.map(u => u.toLowerCase()).filter(u => u !== me);
         renderUserList();
         updateCallButtonsAvailability();
         updateChatHeaderStatus();
@@ -646,20 +835,22 @@
       });
 
       socket.on('receive-message', (msg) => {
-        if (!contactsList.includes(msg.from)) contactsList.push(msg.from);
+        const fromLower = (msg.from || '').toLowerCase();
+        if (!contactsList.includes(fromLower)) contactsList.push(fromLower);
 
-        if (selectedUser === msg.from) {
+        if (selectedUser === fromLower && !selectedGroupId) {
           appendMessage(msg, 'received');
-          socket.emit('mark-read', { sender: msg.from });
+          socket.emit('mark-read', { sender: fromLower });
         } else {
-          unreadCounts[msg.from] = (unreadCounts[msg.from] || 0) + 1;
+          unreadCounts[fromLower] = (unreadCounts[fromLower] || 0) + 1;
           renderUserList();
         }
       });
 
       socket.on('message-sent-confirm', (msg) => {
-        appendMessage(msg, 'sent');
-        if (!contactsList.includes(msg.to)) contactsList.push(msg.to);
+        if (!selectedGroupId) appendMessage(msg, 'sent');
+        const toLower = (msg.to || '').toLowerCase();
+        if (!contactsList.includes(toLower)) contactsList.push(toLower);
         renderUserList();
       });
 
@@ -667,6 +858,41 @@
         if (selectedUser === by) {
           document.querySelectorAll('.tick-mark').forEach(el => el.textContent = '✓✓');
         }
+      });
+
+      socket.on('message-blocked', ({ to }) => {
+        // Silently ignored — sender sees their message wasn't delivered
+      });
+
+      // Group events
+      socket.on('receive-group-message', (msg) => {
+        if (selectedGroupId === msg.groupId) {
+          appendGroupMessage(msg);
+        } else {
+          // bump unread badge for the group
+          const grp = groupsList.find(g => g.id === msg.groupId);
+          if (grp) {
+            grp._unread = (grp._unread || 0) + 1;
+            renderGroupList();
+          }
+        }
+      });
+
+      socket.on('group-created', (group) => {
+        if (!groupsList.find(g => g.id === group.id)) {
+          groupsList.push(group);
+          renderGroupList();
+          // If the creator is someone else, badge the Groups tab so the user notices
+          if (group.createdBy !== (currentUser || '').toLowerCase()) {
+            setGroupsTabBadge(true);
+          }
+        }
+      });
+
+      socket.on('group-deleted', ({ groupId }) => {
+        groupsList = groupsList.filter(g => g.id !== groupId);
+        if (selectedGroupId === groupId) closeChat();
+        renderGroupList();
       });
 
       socket.on('call-failed', ({ user, reason }) => {
@@ -678,6 +904,7 @@
         document.getElementById('ringtone').play().catch(() => {});
         incomingOffer = offer;
         selectedUser = from;
+        selectedGroupId = null;
         currentCallType = type;
 
         updateCallButtonsAvailability();
@@ -696,12 +923,6 @@
         try {
           const answerObj = typeof answer === 'string' ? JSON.parse(answer) : answer;
           await peerConnection.setRemoteDescription(new RTCSessionDescription(answerObj));
-          
-          // FIX: Add any ICE candidates that arrived before the connection was fully ready
-          while (pendingCandidates.length) {
-            const c = pendingCandidates.shift();
-            await peerConnection.addIceCandidate(new RTCIceCandidate(c)).catch(console.error);
-          }
         } catch (err) {
           console.error('Error setting remote description for answer:', err);
         }
@@ -710,13 +931,10 @@
         showCallBannerIfNeeded();
       });
 
-      // FIX: Queue ICE candidates if the RTCPeerConnection isn't ready yet
-      socket.on('ice-candidate', async (c) => {
-        if (!peerConnection || !peerConnection.remoteDescription) {
-          pendingCandidates.push(c);
-        } else {
+      socket.on('ice-candidate', (c) => {
+        if (peerConnection && c) {
           try {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(c));
+            peerConnection.addIceCandidate(new RTCIceCandidate(c));
           } catch (err) {
             console.error('Error adding ICE candidate:', err);
           }
@@ -726,34 +944,9 @@
       socket.on('call-cancelled', () => { resetCallUI(); alert('Call cancelled'); });
       socket.on('call-rejected', () => { resetCallUI(); alert('Call rejected'); });
       socket.on('call-ended', () => { captureAndLogGPS('End'); resetCallUI(); });
-
-    // FIX: "Ghost Call" Prevention
-    // Check if the disconnecting user was in a call or ringing someone
-    socket.on('disconnect', () => {
-    for (const [userId, status] of callStatus.entries()) {
-      if (userId === username || status.with === username) {
-        // Find the partner they were calling/talking to
-        const partnerId = userId === username ? status.with : userId;
-        const partnerSocket = connectedUsers.get(partnerId);
-        
-        // Tell the partner the call abruptly ended
-        if (partnerSocket) {
-          io.to(partnerSocket).emit('call-ended');
-        }
-        
-        // Clear the partner's call status
-        callStatus.delete(partnerId);
-      }
     }
 
-    connectedUsers.delete(username);
-    callStatus.delete(username);
-    console.log(`❌ ${username} disconnected [${getTimestamp()}]`);
-    io.emit('users-online', Array.from(connectedUsers.keys()));
-  });
-
-    }
-
+    // --- Render user (direct chat) list ---
     function renderUserList() {
       const list = document.getElementById('users-list');
       list.innerHTML = '';
@@ -772,9 +965,10 @@
 
       allUsers.forEach(u => {
         const isOnline = onlineUsersList.includes(u);
+        const blocked = isUserBlocked(u);
 
         const div = document.createElement('div');
-        div.className = `user-item ${selectedUser === u ? 'active' : ''}`;
+        div.className = `user-item ${selectedUser === u && !selectedGroupId ? 'active' : ''} ${blocked ? 'blocked-item' : ''}`;
 
         const info = document.createElement('div');
         info.className = 'user-info-group';
@@ -782,12 +976,20 @@
         const dot = document.createElement('div');
         dot.className = `user-status ${isOnline ? 'online' : ''}`;
 
+        const nameWrap = document.createElement('div');
         const name = document.createElement('div');
         name.className = 'user-name';
         name.textContent = u;
+        nameWrap.appendChild(name);
+        if (blocked) {
+          const sub = document.createElement('div');
+          sub.className = 'user-name-sub';
+          sub.textContent = 'Blocked';
+          nameWrap.appendChild(sub);
+        }
 
         info.appendChild(dot);
-        info.appendChild(name);
+        info.appendChild(nameWrap);
 
         const actions = document.createElement('div');
         actions.className = 'user-actions';
@@ -799,6 +1001,19 @@
           actions.appendChild(badge);
         }
 
+        // Block/unblock button
+        const blockBtn = document.createElement('button');
+        blockBtn.className = `block-btn ${blocked ? 'blocked' : ''}`;
+        blockBtn.title = blocked ? 'Unblock user' : 'Block user';
+        blockBtn.textContent = blocked ? '🚫' : '🚫';
+        blockBtn.style.opacity = blocked ? '1' : '0.35';
+        blockBtn.onclick = (e) => {
+          e.stopPropagation();
+          toggleBlockUser(u, blocked);
+        };
+        actions.appendChild(blockBtn);
+
+        // Delete button
         const del = document.createElement('button');
         del.className = 'delete-btn';
         del.title = 'Delete chat history';
@@ -812,9 +1027,93 @@
         div.appendChild(info);
         div.appendChild(actions);
 
-        div.onclick = () => selectUser(u);
+        div.onclick = () => { if (!blocked) selectUser(u); };
         list.appendChild(div);
       });
+    }
+
+    // --- Render group list ---
+    function renderGroupList() {
+      const list = document.getElementById('groups-list');
+      list.innerHTML = '';
+
+      groupsList.forEach(grp => {
+        const div = document.createElement('div');
+        div.className = `user-item ${selectedGroupId === grp.id ? 'active' : ''}`;
+
+        const info = document.createElement('div');
+        info.className = 'user-info-group';
+
+        const icon = document.createElement('div');
+        icon.className = 'group-icon';
+        icon.textContent = '👥';
+
+        const nameWrap = document.createElement('div');
+        const name = document.createElement('div');
+        name.className = 'user-name';
+        name.textContent = grp.name;
+        const sub = document.createElement('div');
+        sub.className = 'user-name-sub';
+        sub.textContent = `${grp.members.length} members`;
+        nameWrap.appendChild(name);
+        nameWrap.appendChild(sub);
+
+        info.appendChild(icon);
+        info.appendChild(nameWrap);
+
+        const actions = document.createElement('div');
+        actions.className = 'user-actions';
+
+        if (grp._unread && grp._unread > 0) {
+          const badge = document.createElement('span');
+          badge.className = 'unread-badge';
+          badge.textContent = grp._unread;
+          actions.appendChild(badge);
+        }
+
+        const del = document.createElement('button');
+        del.className = 'delete-btn';
+        del.title = 'Delete group';
+        del.textContent = '🗑';
+        del.onclick = (e) => {
+          e.stopPropagation();
+          deleteGroup(grp.id, grp.name);
+        };
+        actions.appendChild(del);
+
+        div.appendChild(info);
+        div.appendChild(actions);
+        div.onclick = () => selectGroup(grp.id);
+        list.appendChild(div);
+      });
+    }
+
+    // --- Block / Unblock ---
+    async function toggleBlockUser(user, currentlyBlocked) {
+      const endpoint = currentlyBlocked ? `/api/unblock/${user}` : `/api/block/${user}`;
+      const confirmMsg = currentlyBlocked
+        ? `Unblock "${user}"? They will be able to send you messages again.`
+        : `Block "${user}"? Their messages will no longer reach you.`;
+
+      if (!confirm(confirmMsg)) return;
+
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (res.ok) {
+          if (currentlyBlocked) {
+            blockedList = blockedList.filter(u => u !== user);
+          } else {
+            blockedList.push(user);
+            if (selectedUser === user) closeChat();
+          }
+          renderUserList();
+        }
+      } catch (e) {
+        console.error(e);
+      }
     }
 
     async function deleteChatHistory(user) {
@@ -827,14 +1126,9 @@
           headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
         });
 
-        if (!res.ok) {
-          alert('Failed to delete chat history.');
-          return;
-        }
+        if (!res.ok) { alert('Failed to delete chat history.'); return; }
 
-        if (selectedUser === user) {
-          closeChat();
-        }
+        if (selectedUser === user) closeChat();
 
         unreadCounts[user] = 0;
         await loadContacts();
@@ -847,8 +1141,10 @@
       }
     }
 
+    // --- Select direct user ---
     async function selectUser(user) {
       selectedUser = user;
+      selectedGroupId = null;
       if (!contactsList.includes(user)) contactsList.push(user);
 
       unreadCounts[user] = 0;
@@ -877,12 +1173,47 @@
       msgs.forEach(m => appendMessage(m, m.from === currentUser ? 'sent' : 'received'));
     }
 
+    // --- Select group ---
+    async function selectGroup(groupId) {
+      selectedGroupId = groupId;
+      selectedUser = null;
+
+      const grp = groupsList.find(g => g.id === groupId);
+      if (!grp) return;
+      grp._unread = 0;
+
+      renderGroupList();
+      updateCallButtonsAvailability();
+      updateChatHeaderStatus();
+
+      if (window.innerWidth <= 768) {
+        document.getElementById('sidebar').classList.add('mobile-hidden');
+        document.getElementById('chat-area').classList.add('mobile-fullscreen');
+      }
+
+      document.getElementById('no-chat-selected').classList.add('hidden');
+      document.getElementById('active-chat-interface').classList.remove('hidden');
+      document.getElementById('chat-with-name').innerText = grp.name;
+
+      try {
+        const res = await fetch(`/api/groups/${groupId}/messages`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        const msgs = await res.json();
+        const container = document.getElementById('messages-container');
+        container.innerHTML = '';
+        msgs.forEach(m => appendGroupMessage(m));
+      } catch (e) {
+        console.error('Failed to load group messages', e);
+      }
+    }
+
     function closeChat() {
       selectedUser = null;
+      selectedGroupId = null;
 
       document.getElementById('active-chat-interface').classList.add('hidden');
       document.getElementById('no-chat-selected').classList.remove('hidden');
-
       document.getElementById('sidebar').classList.remove('mobile-hidden');
       document.getElementById('chat-area').classList.remove('mobile-fullscreen');
 
@@ -892,13 +1223,18 @@
     function sendMessage() {
       const input = document.getElementById('msg-input');
       const text = input.value.trim();
-      if (!text || !selectedUser) return;
+      if (!text) return;
 
-      if (!contactsList.includes(selectedUser)) contactsList.push(selectedUser);
-      socket.emit('send-message', { to: selectedUser, message: text });
+      if (selectedGroupId) {
+        socket.emit('send-group-message', { groupId: selectedGroupId, message: text });
+        // Do NOT render here — the server echoes receive-group-message back to the sender too
+      } else if (selectedUser) {
+        if (!contactsList.includes(selectedUser)) contactsList.push(selectedUser);
+        socket.emit('send-message', { to: selectedUser, message: text });
+        renderUserList();
+      }
 
       input.value = '';
-      renderUserList();
     }
 
     function appendMessage(msg, type) {
@@ -916,6 +1252,105 @@
       const container = document.getElementById('messages-container');
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
+    }
+
+    function appendGroupMessage(msg) {
+      const isMine = msg.from === currentUser;
+      const div = document.createElement('div');
+      div.className = `message msg-${isMine ? 'sent' : 'received'}`;
+      const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      let inner = '';
+      if (!isMine) {
+        inner += `<div class="msg-sender-name">${msg.from}</div>`;
+      }
+      inner += `${msg.message}<div class="msg-meta">${time}</div>`;
+      div.innerHTML = inner;
+
+      const container = document.getElementById('messages-container');
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // --- Create Group Modal ---
+    function openCreateGroupModal() {
+      const allUsers = Array.from(new Set([...(contactsList || []), ...(onlineUsersList || [])])).filter(u => u !== currentUser);
+      const listEl = document.getElementById('modal-members-list');
+      listEl.innerHTML = '';
+
+      if (allUsers.length === 0) {
+        listEl.innerHTML = '<p style="padding:10px; color:#999; font-size:13px;">No contacts available.</p>';
+      } else {
+        allUsers.sort().forEach(u => {
+          const item = document.createElement('label');
+          item.className = 'modal-member-item';
+          item.innerHTML = `<input type="checkbox" value="${u}" /> ${u}`;
+          listEl.appendChild(item);
+        });
+      }
+
+      document.getElementById('group-name-input').value = '';
+      document.getElementById('create-group-modal').classList.remove('hidden');
+    }
+
+    function closeCreateGroupModal() {
+      document.getElementById('create-group-modal').classList.add('hidden');
+    }
+
+    async function createGroup() {
+      const name = document.getElementById('group-name-input').value.trim();
+      if (!name) { alert('Please enter a group name.'); return; }
+
+      const checked = Array.from(document.querySelectorAll('#modal-members-list input[type=checkbox]:checked')).map(c => c.value);
+      if (checked.length === 0) { alert('Select at least one member.'); return; }
+
+      try {
+        const res = await fetch('/api/groups', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({ name, members: checked })
+        });
+
+        if (res.ok) {
+          const group = await res.json();
+          if (!groupsList.find(g => g.id === group.id)) groupsList.push(group);
+          renderGroupList();
+          closeCreateGroupModal();
+          switchTab('groups');
+          selectGroup(group.id);
+        } else {
+          const err = await res.json();
+          alert(err.message || 'Failed to create group.');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Failed to create group.');
+      }
+    }
+
+    async function deleteGroup(groupId, groupName) {
+      if (!confirm(`Delete group "${groupName}"? This cannot be undone.`)) return;
+
+      try {
+        const res = await fetch(`/api/groups/${groupId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+
+        if (res.ok) {
+          groupsList = groupsList.filter(g => g.id !== groupId);
+          if (selectedGroupId === groupId) closeChat();
+          renderGroupList();
+        } else {
+          alert('Failed to delete group.');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Failed to delete group.');
+      }
     }
 
     function updateEnableButtons() {
@@ -1047,7 +1482,7 @@
       }
 
       if (!audioTrack.enabled) {
-        try { audioTrack.enabled = true; } catch (err) { }
+        try { audioTrack.enabled = true; } catch (err) {}
         if (!audioTrack.enabled) {
           alert('Microphone is muted/unavailable. Allow microphone in browser settings.');
           socket.emit('call-diagnostics', { to: selectedUser, stage: 'preflight', reason: 'audio-disabled' });
@@ -1059,21 +1494,25 @@
       setupVideoElements(type);
       createPeerConnection();
 
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-      });
+      const sendersBefore = peerConnection.getSenders().map(s => s.track && s.track.kind).filter(Boolean);
+      localStream.getTracks().forEach(track => { peerConnection.addTrack(track, localStream); });
+      const sendersAfter = peerConnection.getSenders().map(s => s.track && s.track.kind).filter(Boolean);
+      console.log('senders before/after:', sendersBefore, sendersAfter);
 
       const hasAudioSender = peerConnection.getSenders().some(s => s.track && s.track.kind === 'audio');
       const hasVideoSender = (type === 'video') ? peerConnection.getSenders().some(s => s.track && s.track.kind === 'video') : true;
       if (!hasAudioSender || !hasVideoSender) {
+        console.error('Missing local sender(s)', { hasAudioSender, hasVideoSender });
         socket.emit('call-diagnostics', { to: selectedUser, stage: 'preflight', reason: 'missing-senders', hasAudioSender, hasVideoSender });
         alert('Failed to attach local media to the call. Check permissions and try again.');
         return;
       }
 
       try {
+        console.log('Creating offer...');
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
+        console.log('Local description set; sending offer (sdp length=%d)', offer.sdp?.length || 0);
 
         socket.emit('call-user', {
           userToCall: selectedUser,
@@ -1120,21 +1559,13 @@
         const offerObj = typeof incomingOffer === 'string' ? JSON.parse(incomingOffer) : incomingOffer;
         await peerConnection.setRemoteDescription(new RTCSessionDescription(offerObj));
 
-        // FIX: Add any queued ICE candidates that came in before the user answered
-        while (pendingCandidates.length) {
-          const c = pendingCandidates.shift();
-          await peerConnection.addIceCandidate(new RTCIceCandidate(c)).catch(console.error);
-        }
-
-        localStream.getTracks().forEach(track => {
-          peerConnection.addTrack(track, localStream);
-        });
+        localStream.getTracks().forEach(track => { peerConnection.addTrack(track, localStream); });
 
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
 
-        socket.emit('answer-call', { 
-          to: selectedUser, 
+        socket.emit('answer-call', {
+          to: selectedUser,
           answer: {
             type: peerConnection.localDescription.type,
             sdp: peerConnection.localDescription.sdp
@@ -1163,18 +1594,33 @@
       peerConnection = new RTCPeerConnection(rtcConfig);
 
       peerConnection.onicecandidate = (e) => {
+        console.log('ICE candidate:', e.candidate ? `${e.candidate.candidate.substring(0, 50)}...` : 'gathering complete');
         if (e.candidate) {
           socket.emit('ice-candidate', { to: selectedUser, candidate: e.candidate });
         }
       };
 
       peerConnection.ontrack = (e) => {
+        console.log('Remote track received:', e.track.kind, 'streams:', e.streams.length);
         if (currentCallType === 'video') {
           document.getElementById('remote-video').srcObject = e.streams[0];
         } else {
           document.getElementById('remote-audio').srcObject = e.streams[0];
         }
         applySpeakerMode();
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        console.log('Connection state:', peerConnection.connectionState);
+        if (peerConnection.connectionState === 'failed') console.error('Connection failed!');
+      };
+
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log('ICE connection state:', peerConnection.iceConnectionState);
+      };
+
+      peerConnection.onsignalingstatechange = () => {
+        console.log('Signaling state:', peerConnection.signalingState);
       };
     }
 
@@ -1206,8 +1652,6 @@
         peerConnection.close();
         peerConnection = null;
       }
-      
-      pendingCandidates = []; // FIX: Clear pending candidates on reset
 
       stopCallTimer();
 
@@ -1217,7 +1661,7 @@
 
       isMuted = false;
       isVideoStopped = false;
-      speakerMode = 'headset'; 
+      speakerMode = 'headset';
 
       applySpeakerMode();
       updateControlButtons();
@@ -1321,6 +1765,13 @@
       document.getElementById('local-video').srcObject = localStream;
     }
 
+    function emitLocalDiagnostics(obj) {
+      console.log('LOCAL DIAGNOSTIC:', obj);
+      if (socket && socket.connected && selectedUser) {
+        socket.emit('call-diagnostics', Object.assign({ to: selectedUser }, obj));
+      }
+    }
+
     function setButtonVisual(btn, disabled) {
       btn.classList.toggle('active', !!disabled);
     }
@@ -1331,16 +1782,16 @@
       const speakerBtn = document.getElementById('speaker-btn');
 
       setButtonVisual(muteBtn, isMuted);
-      
+
       speakerBtn.classList.remove('active');
-      speakerBtn.classList.add('btn-secondary'); 
-      
+      speakerBtn.classList.add('btn-secondary');
+
       if (speakerMode === 'headset') {
         speakerBtn.innerHTML = '<span class="icon">🎧</span>';
       } else if (speakerMode === 'loudspeaker') {
         speakerBtn.innerHTML = '<span class="icon">📢</span>';
       } else if (speakerMode === 'mute') {
-        speakerBtn.classList.add('active'); 
+        speakerBtn.classList.add('active');
         speakerBtn.innerHTML = '<span class="icon">🔊</span><span class="strike"></span>';
       }
 
