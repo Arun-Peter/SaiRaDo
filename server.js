@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const path = require('path');
 const cors = require('cors');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || require('crypto').randomBytes(32).toString('hex');
@@ -15,6 +16,12 @@ const USERS_PATH = path.join(__dirname, 'users.json');
 const CHATS_PATH = path.join(__dirname, 'chats.json');
 const APP_STATE_PATH = path.join(__dirname, 'app_state.json');
 const GPS_LOG_PATH = path.join(__dirname, 'gps_logs.json');
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const MAX_IMAGE_BYTES = 1024 * 1024;
+const MAX_VIDEO_BYTES = 5 * 1024 * 1024;
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const VIDEO_TYPES = new Set(['video/mp4', 'video/webm']);
+const ATTACHMENT_TYPES = new Set([...IMAGE_TYPES, ...VIDEO_TYPES]);
 
 const app = express();
 const server = http.createServer(app);
@@ -97,6 +104,88 @@ function saveAppState() {
     groups,
     blockedUsers,
   }, null, 2));
+}
+
+function removeAttachments(chatMessages) {
+  for (const msg of chatMessages) {
+    const id = msg.attachment && msg.attachment.id;
+    if (typeof id === 'string' && /^[0-9a-f-]{36}$/.test(id)) {
+      fs.rmSync(path.join(UPLOADS_DIR, id), { force: true });
+    }
+  }
+}
+
+function getAttachmentType(buffer) {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    return 'image/png';
+  }
+  if (buffer.length >= 6 && ['GIF87a', 'GIF89a'].includes(buffer.toString('ascii', 0, 6))) {
+    return 'image/gif';
+  }
+  if (buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' &&
+      buffer.toString('ascii', 8, 12) === 'WEBP') {
+    return 'image/webp';
+  }
+  if (buffer.length >= 12 && buffer.toString('ascii', 4, 8) === 'ftyp') {
+    return 'video/mp4';
+  }
+  if (buffer.length >= 4 &&
+      buffer.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) {
+    return 'video/webm';
+  }
+  return null;
+}
+
+function createAttachmentMessage({ username, recipient, groupId, message, buffer, mimeType }) {
+  const id = crypto.randomUUID();
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(UPLOADS_DIR, id), buffer, { flag: 'wx', mode: 0o600 });
+
+  const msg = {
+    from: username,
+    message,
+    timestamp: new Date().toISOString(),
+    attachment: { id, mimeType },
+  };
+
+  if (groupId) {
+    msg.groupId = groupId;
+    groupMessages.push(msg);
+    try {
+      saveChats();
+    } catch (error) {
+      groupMessages.pop();
+      fs.rmSync(path.join(UPLOADS_DIR, id), { force: true });
+      throw error;
+    }
+    for (const member of groups[groupId].members) {
+      const sid = connectedUsers.get(member);
+      if (sid) io.to(sid).emit('receive-group-message', msg);
+    }
+  } else {
+    msg.to = recipient;
+    msg.read = false;
+    messages.push(msg);
+    try {
+      saveChats();
+    } catch (error) {
+      messages.pop();
+      fs.rmSync(path.join(UPLOADS_DIR, id), { force: true });
+      throw error;
+    }
+    const recipientSocket = connectedUsers.get(recipient);
+    socketBroadcastDirectMessage(username, recipientSocket, msg);
+  }
+  return msg;
+}
+
+function socketBroadcastDirectMessage(username, recipientSocket, msg) {
+  const senderSocket = connectedUsers.get(username);
+  if (senderSocket) io.to(senderSocket).emit('message-sent-confirm', msg);
+  if (recipientSocket) io.to(recipientSocket).emit('receive-message', msg);
 }
 
 function logGPS(username, stage, type, coords) {
@@ -188,6 +277,119 @@ app.get('/api/auth/verify', authenticateToken, (req, res) => {
   res.json({ username: req.user.username });
 });
 
+app.post('/api/attachments/direct/:target', authenticateToken,
+  express.raw({ type: Array.from(ATTACHMENT_TYPES), limit: MAX_VIDEO_BYTES }),
+  (req, res) => {
+    const username = req.user.username.toLowerCase();
+    const target = req.params.target.toLowerCase();
+    const buffer = req.body;
+
+    if (!usersDB[target] || target === username) {
+      return res.status(404).json({ message: 'Chat recipient not found' });
+    }
+    if (isBlocked(target, username)) {
+      return res.status(403).json({ message: 'Recipient is not accepting messages from you' });
+    }
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+      return res.status(400).json({ message: 'Choose a supported attachment to upload' });
+    }
+    const mimeType = getAttachmentType(buffer);
+    if (!mimeType || mimeType !== req.headers['content-type'] ||
+        !ATTACHMENT_TYPES.has(req.headers['content-type'])) {
+      return res.status(415).json({ message: 'Only valid JPEG, PNG, GIF, WebP, MP4, or WebM files are supported' });
+    }
+    const maxBytes = VIDEO_TYPES.has(mimeType) ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+    if (buffer.length >= maxBytes) {
+      return res.status(413).json({
+        message: VIDEO_TYPES.has(mimeType)
+          ? 'Video must be smaller than 5 MB'
+          : 'Image must be smaller than 1 MB',
+      });
+    }
+
+    const message = typeof req.headers['x-message-text'] === 'string'
+      ? req.headers['x-message-text'].trim()
+      : '';
+    if (message.length > 1000) {
+      return res.status(400).json({ message: 'Caption must be 1000 characters or fewer' });
+    }
+
+    const msg = createAttachmentMessage({ username, recipient: target, message, buffer, mimeType });
+    res.status(201).json(msg);
+  });
+
+app.post('/api/attachments/group/:groupId', authenticateToken,
+  express.raw({ type: Array.from(ATTACHMENT_TYPES), limit: MAX_VIDEO_BYTES }),
+  (req, res) => {
+    const username = req.user.username.toLowerCase();
+    const group = groups[req.params.groupId];
+    const buffer = req.body;
+
+    if (!group || !group.members.includes(username)) {
+      return res.status(403).json({ message: 'Not a member of this group' });
+    }
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+      return res.status(400).json({ message: 'Choose a supported attachment to upload' });
+    }
+    const mimeType = getAttachmentType(buffer);
+    if (!mimeType || mimeType !== req.headers['content-type'] ||
+        !ATTACHMENT_TYPES.has(req.headers['content-type'])) {
+      return res.status(415).json({ message: 'Only valid JPEG, PNG, GIF, WebP, MP4, or WebM files are supported' });
+    }
+    const maxBytes = VIDEO_TYPES.has(mimeType) ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+    if (buffer.length >= maxBytes) {
+      return res.status(413).json({
+        message: VIDEO_TYPES.has(mimeType)
+          ? 'Video must be smaller than 5 MB'
+          : 'Image must be smaller than 1 MB',
+      });
+    }
+
+    const message = typeof req.headers['x-message-text'] === 'string'
+      ? req.headers['x-message-text'].trim()
+      : '';
+    if (message.length > 1000) {
+      return res.status(400).json({ message: 'Caption must be 1000 characters or fewer' });
+    }
+
+    const msg = createAttachmentMessage({
+      username,
+      groupId: group.id,
+      message,
+      buffer,
+      mimeType,
+    });
+    res.status(201).json(msg);
+  });
+
+app.get('/api/attachments/:id', authenticateToken, (req, res) => {
+  const id = req.params.id;
+  if (!/^[0-9a-f-]{36}$/.test(id)) {
+    return res.status(404).json({ message: 'Attachment not found' });
+  }
+
+  const username = req.user.username.toLowerCase();
+  const msg = messages.find(item => item.attachment && item.attachment.id === id &&
+    (item.from === username || item.to === username)) ||
+    groupMessages.find(item => item.attachment && item.attachment.id === id &&
+      groups[item.groupId] && groups[item.groupId].members.includes(username));
+  if (!msg || !ATTACHMENT_TYPES.has(msg.attachment.mimeType)) {
+    return res.status(404).json({ message: 'Attachment not found' });
+  }
+
+  const filePath = path.join(UPLOADS_DIR, id);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ message: 'Attachment file not found' });
+  }
+
+  res.set({
+    'Cache-Control': 'private, no-store',
+    'Content-Disposition': 'inline',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.type(msg.attachment.mimeType).sendFile(filePath);
+});
+
 app.get('/api/messages/:target', authenticateToken, (req, res) => {
   const target = req.params.target.toLowerCase();
   const current = req.user.username.toLowerCase();
@@ -207,6 +409,9 @@ app.delete('/api/messages/:target', authenticateToken, (req, res) => {
   const current = req.user.username.toLowerCase();
 
   const before = messages.length;
+  const removedMessages = messages.filter(
+    (m) => (m.from === current && m.to === target) || (m.from === target && m.to === current)
+  );
   messages = messages.filter(
     (m) =>
       !(
@@ -217,6 +422,7 @@ app.delete('/api/messages/:target', authenticateToken, (req, res) => {
 
   const deleted = before - messages.length;
   saveChats();
+  removeAttachments(removedMessages);
 
   res.json({ ok: true, deleted });
 });
@@ -318,9 +524,11 @@ app.delete('/api/groups/:groupId', authenticateToken, (req, res) => {
 
   const members = [...group.members];
   delete groups[groupId];
+  const removedMessages = groupMessages.filter(m => m.groupId === groupId);
   groupMessages = groupMessages.filter(m => m.groupId !== groupId);
   saveAppState();
   saveChats();
+  removeAttachments(removedMessages);
 
   for (const member of members) {
     const sid = connectedUsers.get(member);
