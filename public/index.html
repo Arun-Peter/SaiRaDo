@@ -290,6 +290,21 @@
     .msg-received { align-self: flex-start; background: white; border: 1px solid #e0e0e0; border-bottom-left-radius: 4px; }
     .msg-meta { font-size: 10px; text-align: right; margin-top: 4px; opacity: 0.8; display: flex; justify-content: flex-end; align-items: center; gap: 4px; }
     .msg-sender-name { font-size: 11px; font-weight: 700; color: #667eea; margin-bottom: 3px; }
+    .message-image { display: block; max-width: min(240px, 60vw); max-height: 240px; object-fit: contain; border-radius: 10px; margin: 4px 0; }
+    .message-image { cursor: zoom-in; }
+    .message-video { display: block; max-width: min(300px, 65vw); max-height: 220px; border-radius: 10px; margin: 4px 0; background: #111; }
+    .video-expand { padding: 5px 10px; border: 0; border-radius: 14px; cursor: pointer; font-size: 12px; }
+    .image-viewer {
+      position: fixed; inset: 0; z-index: 300; display: flex;
+      align-items: center; justify-content: center; padding: 48px 16px 16px;
+      background: rgba(0, 0, 0, 0.92);
+    }
+    .image-viewer img, .image-viewer video { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .image-viewer-close {
+      position: absolute; top: 12px; right: 16px; width: 44px; height: 44px;
+      border: 0; border-radius: 50%; background: rgba(255,255,255,0.16);
+      color: white; font-size: 30px; cursor: pointer;
+    }
 
     .input-area {
       padding: 20px; border-top: 1px solid #e0e0e0; background: white;
@@ -301,6 +316,10 @@
     .input-area button {
       padding: 10px 25px; background: #2196f3; color: white; border: none; border-radius: 25px; cursor: pointer;
     }
+    .input-area button:disabled { opacity: 0.55; cursor: wait; }
+    .attach-btn { flex: 0 0 auto; padding: 10px 14px !important; }
+    .attachment-status { align-self: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #666; }
+    .attachment-remove { padding: 4px 8px !important; background: #e0e0e0 !important; color: #333 !important; }
 
     /* Call Overlay */
     .call-overlay {
@@ -431,6 +450,10 @@
       .chat-area { height: 60vh; }
       .sidebar.mobile-hidden { display: none; }
       .chat-area.mobile-fullscreen { height: 100vh; }
+      .input-area { padding: 10px; gap: 6px; flex-wrap: wrap; }
+      .input-area input { min-width: 0; padding: 10px 12px; }
+      .input-area button { padding: 10px 14px; }
+      .attachment-status { flex-basis: 100%; order: 2; }
     }
 
     .password-wrapper { position: relative; }
@@ -537,7 +560,11 @@
         <div id="messages-container" class="messages-box"></div>
 
         <div class="input-area">
+          <button id="attach-btn" class="attach-btn" type="button" onclick="document.getElementById('attachment-input').click()" title="Attach an image under 1 MB or video under 5 MB">📎</button>
+          <input id="attachment-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm" hidden onchange="updateAttachmentLabel()" />
           <input id="msg-input" placeholder="Type a message..." onkeypress="if(event.key === 'Enter') sendMessage()" />
+          <span id="attachment-status" class="attachment-status"></span>
+          <button id="attachment-remove" class="attachment-remove" type="button" onclick="clearSelectedAttachment()" title="Remove selected attachment" hidden>×</button>
           <button onclick="sendMessage()">Send</button>
         </div>
       </div>
@@ -597,12 +624,20 @@
     </div>
   </div>
 
+  <div id="image-viewer" class="image-viewer hidden" role="dialog" aria-modal="true" aria-label="Enlarged chat attachment" onclick="closeImageViewer()">
+    <button class="image-viewer-close" type="button" aria-label="Close enlarged attachment" onclick="closeImageViewer()">×</button>
+    <img id="image-viewer-image" alt="Enlarged chat image" onclick="event.stopPropagation()" />
+    <video id="image-viewer-video" controls playsinline hidden onclick="event.stopPropagation()"></video>
+  </div>
+
   <audio id="remote-audio" autoplay></audio>
   <audio id="ringtone" loop src="/ringtone.mp3"></audio>
 
   <script>
     const socket = io({ autoConnect: false });
 
+    const attachmentObjectUrls = new Set();
+    let imageViewerTrigger = null;
     let currentUser = null;
     let selectedUser = null;       // direct chat target
     let selectedGroupId = null;    // group chat target
@@ -635,6 +670,12 @@
 
     let currentFacingMode = "user";
     const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !document.getElementById('image-viewer').classList.contains('hidden')) {
+        closeImageViewer();
+      }
+    });
 
     window.addEventListener('load', async () => {
       const token = localStorage.getItem('token');
@@ -711,6 +752,7 @@
     }
 
     function logout() {
+      clearAttachmentObjectUrls();
       localStorage.clear();
       location.reload();
     }
@@ -848,7 +890,7 @@
       });
 
       socket.on('message-sent-confirm', (msg) => {
-        if (!selectedGroupId) appendMessage(msg, 'sent');
+        if (selectedUser === msg.to && !selectedGroupId) appendMessage(msg, 'sent');
         const toLower = (msg.to || '').toLowerCase();
         if (!contactsList.includes(toLower)) contactsList.push(toLower);
         renderUserList();
@@ -1143,6 +1185,7 @@
 
     // --- Select direct user ---
     async function selectUser(user) {
+      clearMessages();
       selectedUser = user;
       selectedGroupId = null;
       if (!contactsList.includes(user)) contactsList.push(user);
@@ -1168,13 +1211,12 @@
       });
 
       const msgs = await res.json();
-      const container = document.getElementById('messages-container');
-      container.innerHTML = '';
       msgs.forEach(m => appendMessage(m, m.from === currentUser ? 'sent' : 'received'));
     }
 
     // --- Select group ---
     async function selectGroup(groupId) {
+      clearMessages();
       selectedGroupId = groupId;
       selectedUser = null;
 
@@ -1200,8 +1242,6 @@
           headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
         });
         const msgs = await res.json();
-        const container = document.getElementById('messages-container');
-        container.innerHTML = '';
         msgs.forEach(m => appendGroupMessage(m));
       } catch (e) {
         console.error('Failed to load group messages', e);
@@ -1209,6 +1249,7 @@
     }
 
     function closeChat() {
+      clearMessages();
       selectedUser = null;
       selectedGroupId = null;
 
@@ -1220,10 +1261,84 @@
       updateCallButtonsAvailability();
     }
 
-    function sendMessage() {
+    function updateAttachmentLabel() {
+      const file = document.getElementById('attachment-input').files[0];
+      document.getElementById('attachment-status').textContent = file ? file.name : '';
+      document.getElementById('attachment-remove').hidden = !file;
+    }
+
+    function clearSelectedAttachment() {
+      document.getElementById('attachment-input').value = '';
+      updateAttachmentLabel();
+    }
+
+    function clearAttachmentObjectUrls() {
+      if (!document.getElementById('image-viewer').classList.contains('hidden')) {
+        closeImageViewer();
+      }
+      for (const url of attachmentObjectUrls) URL.revokeObjectURL(url);
+      attachmentObjectUrls.clear();
+    }
+
+    function clearMessages() {
+      clearAttachmentObjectUrls();
+      document.getElementById('messages-container').textContent = '';
+      document.getElementById('attachment-input').value = '';
+      updateAttachmentLabel();
+    }
+
+    async function sendMessage() {
       const input = document.getElementById('msg-input');
       const text = input.value.trim();
-      if (!text) return;
+      const fileInput = document.getElementById('attachment-input');
+      const file = fileInput.files[0];
+      if (!text && !file) return;
+
+      if (file) {
+        const isImage = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type);
+        const isVideo = ['video/mp4', 'video/webm'].includes(file.type);
+        if (!isImage && !isVideo) {
+          alert('Choose a JPEG, PNG, GIF, or WebP image, or an MP4 or WebM video.');
+          return;
+        }
+        const maxBytes = isVideo ? 5 * 1024 * 1024 : 1024 * 1024;
+        if (file.size >= maxBytes) {
+          alert(isVideo ? 'Choose a video smaller than 5 MB.' : 'Choose an image smaller than 1 MB.');
+          return;
+        }
+        if (!selectedUser && !selectedGroupId) return;
+
+        const sendButton = document.querySelector('.input-area button:last-child');
+        sendButton.disabled = true;
+        try {
+          const endpoint = selectedGroupId
+            ? `/api/attachments/group/${encodeURIComponent(selectedGroupId)}`
+            : `/api/attachments/direct/${encodeURIComponent(selectedUser)}`;
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + localStorage.getItem('token'),
+              'Content-Type': file.type,
+              'X-Message-Text': text,
+            },
+            body: file,
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.message || 'Attachment upload failed');
+          input.value = '';
+          fileInput.value = '';
+          updateAttachmentLabel();
+          if (!selectedGroupId && !contactsList.includes(selectedUser)) {
+            contactsList.push(selectedUser);
+            renderUserList();
+          }
+        } catch (error) {
+          alert(error.message || 'Attachment upload failed. Please try again.');
+        } finally {
+          sendButton.disabled = false;
+        }
+        return;
+      }
 
       if (selectedGroupId) {
         socket.emit('send-group-message', { groupId: selectedGroupId, message: text });
@@ -1232,6 +1347,8 @@
         if (!contactsList.includes(selectedUser)) contactsList.push(selectedUser);
         socket.emit('send-message', { to: selectedUser, message: text });
         renderUserList();
+      } else {
+        return;
       }
 
       input.value = '';
@@ -1242,13 +1359,28 @@
       div.className = `message msg-${type}`;
       const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-      let tickHtml = '';
-      if (type === 'sent') {
-        const tick = msg.read ? '✓✓' : '✓';
-        tickHtml = `<span class="tick-mark" style="margin-left:5px;">${tick}</span>`;
+      if (msg.attachment) appendAttachment(msg, div);
+      if (msg.message) {
+        const text = document.createElement('div');
+        text.style.whiteSpace = 'pre-wrap';
+        text.textContent = msg.message;
+        div.appendChild(text);
       }
 
-      div.innerHTML = `${msg.message} <div class="msg-meta">${time} ${tickHtml}</div>`;
+      if (type === 'sent') {
+        const meta = document.createElement('div');
+        meta.className = 'msg-meta';
+        meta.append(document.createTextNode(time));
+        const tick = document.createElement('span');
+        tick.className = 'tick-mark';
+        tick.style.marginLeft = '5px';
+        tick.textContent = msg.read ? '✓✓' : '✓';
+        meta.appendChild(tick);
+        div.appendChild(meta);
+      } else {
+        appendMessageMeta(div, time);
+      }
+
       const container = document.getElementById('messages-container');
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
@@ -1260,16 +1392,123 @@
       div.className = `message msg-${isMine ? 'sent' : 'received'}`;
       const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-      let inner = '';
       if (!isMine) {
-        inner += `<div class="msg-sender-name">${msg.from}</div>`;
+        const sender = document.createElement('div');
+        sender.className = 'msg-sender-name';
+        sender.textContent = msg.from;
+        div.appendChild(sender);
       }
-      inner += `${msg.message}<div class="msg-meta">${time}</div>`;
-      div.innerHTML = inner;
+      if (msg.attachment) appendAttachment(msg, div);
+      if (msg.message) {
+        const text = document.createElement('div');
+        text.style.whiteSpace = 'pre-wrap';
+        text.textContent = msg.message;
+        div.appendChild(text);
+      }
+      appendMessageMeta(div, time);
 
       const container = document.getElementById('messages-container');
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
+    }
+
+    function appendMessageMeta(parent, time) {
+      const meta = document.createElement('div');
+      meta.className = 'msg-meta';
+      meta.textContent = time;
+      parent.appendChild(meta);
+    }
+
+    function openAttachmentViewer(media, trigger = media) {
+      imageViewerTrigger = trigger;
+      const viewer = document.getElementById('image-viewer');
+      const image = document.getElementById('image-viewer-image');
+      const video = document.getElementById('image-viewer-video');
+      if (media.tagName === 'VIDEO') {
+        image.hidden = true;
+        video.hidden = false;
+        video.src = media.src;
+      } else {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+        video.hidden = true;
+        image.hidden = false;
+        image.src = media.src;
+      }
+      viewer.classList.remove('hidden');
+      viewer.querySelector('button').focus();
+    }
+
+    function closeImageViewer() {
+      const viewer = document.getElementById('image-viewer');
+      if (viewer.classList.contains('hidden')) return;
+      viewer.classList.add('hidden');
+      const image = document.getElementById('image-viewer-image');
+      const video = document.getElementById('image-viewer-video');
+      image.removeAttribute('src');
+      image.hidden = false;
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      video.hidden = true;
+      if (imageViewerTrigger && imageViewerTrigger.isConnected) imageViewerTrigger.focus();
+      imageViewerTrigger = null;
+    }
+
+    async function appendAttachment(msg, parent) {
+      const attachmentContainer = document.createElement('div');
+      attachmentContainer.textContent = 'Loading attachment…';
+      parent.appendChild(attachmentContainer);
+
+      try {
+        const response = await fetch(`/api/attachments/${encodeURIComponent(msg.attachment.id)}`, {
+          headers: { Authorization: 'Bearer ' + localStorage.getItem('token') },
+        });
+        if (!response.ok) throw new Error('Attachment unavailable');
+        const objectUrl = URL.createObjectURL(await response.blob());
+        if (!attachmentContainer.isConnected) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        attachmentObjectUrls.add(objectUrl);
+        if (msg.attachment.mimeType.startsWith('video/')) {
+          const video = document.createElement('video');
+          video.className = 'message-video';
+          video.controls = true;
+          video.preload = 'metadata';
+          video.playsInline = true;
+          video.src = objectUrl;
+          video.setAttribute('aria-label', 'Chat video attachment');
+
+          const expandButton = document.createElement('button');
+          expandButton.className = 'video-expand';
+          expandButton.type = 'button';
+          expandButton.textContent = '⛶ Enlarge video';
+          expandButton.setAttribute('aria-label', 'Open video at a larger size');
+          expandButton.addEventListener('click', () => openAttachmentViewer(video, expandButton));
+          attachmentContainer.replaceChildren(video, expandButton);
+        } else {
+          const image = document.createElement('img');
+          image.className = 'message-image';
+          image.alt = 'Chat attachment';
+          image.loading = 'lazy';
+          image.tabIndex = 0;
+          image.setAttribute('role', 'button');
+          image.setAttribute('aria-label', 'Open image at full size');
+          image.addEventListener('click', () => openAttachmentViewer(image));
+          image.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              openAttachmentViewer(image);
+            }
+          });
+          image.src = objectUrl;
+          attachmentContainer.replaceChildren(image);
+        }
+      } catch (error) {
+        attachmentContainer.textContent = '[Attachment unavailable]';
+      }
     }
 
     // --- Create Group Modal ---
